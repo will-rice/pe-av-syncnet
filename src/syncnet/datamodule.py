@@ -79,7 +79,7 @@ class SyncNetDataModule(LightningDataModule):
         """
         if stage == "fit" or stage is None:
             dataset_size = len(self.dataset)  # type: ignore
-            train_size = int(0.8 * dataset_size)
+            train_size = int((1.0 - self.config.test_split) * dataset_size)
             val_size = dataset_size - train_size
             self.train_dataset, self.val_dataset = torch.utils.data.random_split(
                 self.dataset, [train_size, val_size]
