@@ -62,7 +62,10 @@ class SyncNetDataModule(LightningDataModule):
         self.config = config
         self.num_workers = num_workers
         self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
-        self.resample = torchaudio.transforms.Resample(16000, 48000)
+        self.resample = torchaudio.transforms.Resample(
+            16000,
+            self.processor.feature_extractor.sampling_rate,  # type: ignore[attr-defined]
+        )
         self.resize = torchvision.transforms.Resize(
             (config.frame_height, config.frame_width)
         )
@@ -79,7 +82,7 @@ class SyncNetDataModule(LightningDataModule):
         """
         if stage == "fit" or stage is None:
             dataset_size = len(self.dataset)  # type: ignore
-            train_size = int(0.8 * dataset_size)
+            train_size = int((1.0 - self.config.val_split) * dataset_size)
             val_size = dataset_size - train_size
             self.train_dataset, self.val_dataset = torch.utils.data.random_split(
                 self.dataset, [train_size, val_size]
@@ -156,13 +159,13 @@ class SyncNetDataModule(LightningDataModule):
                 audio = audio.mean(dim=0, keepdim=True)  # Convert to mono if stereo
 
                 # Randomly create negative samples by mixing audio/video
-                mix = random.random() > 0.5
+                mix = random.random() > self.config.negative_fraction
                 video_segment, audio_segment = self.sample_random_segment(
                     video,
                     audio,
                     num_frames=self.config.num_frames,
-                    fps=25,
-                    sample_rate=16000,
+                    fps=metadata.get("video_fps", 25),
+                    sample_rate=metadata.get("audio_fps", 16000),
                     mix=mix,
                 )
                 if audio_segment.shape[1] < 3200:
@@ -177,7 +180,7 @@ class SyncNetDataModule(LightningDataModule):
                     audio=audio_segment.squeeze(0),
                     return_tensors="pt",
                     padding=False,
-                    sampling_rate=48000,
+                    sampling_rate=self.processor.feature_extractor.sampling_rate,  # type: ignore[attr-defined]
                 )
                 video_segments.append(input_values["pixel_values_videos"][0])
                 audio_segments.append(input_values["input_values"][0])
