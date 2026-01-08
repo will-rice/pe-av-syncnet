@@ -112,8 +112,8 @@ class SyncNet(PreTrainedModel):
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        audio_emb = outputs.audio_embeds
-        face_emb = outputs.video_embeds
+        audio_emb = outputs.audio_embeds.relu()
+        face_emb = outputs.video_embeds.relu()
 
         audio_emb = audio_emb.view(audio_emb.size(0), -1)
         face_emb = face_emb.view(face_emb.size(0), -1)
@@ -121,5 +121,5 @@ class SyncNet(PreTrainedModel):
         audio_emb = nn.functional.normalize(audio_emb, p=2.0, dim=1)
         face_emb = nn.functional.normalize(face_emb, p=2.0, dim=1)
 
-        similarity = self.similarity_fn(audio_emb.relu(), face_emb.relu()).squeeze(-1)
+        similarity = self.similarity_fn(audio_emb, face_emb).squeeze(-1)
         return similarity

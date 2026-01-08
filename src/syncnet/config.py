@@ -5,6 +5,8 @@ of the SyncNet model training process, including data loading, model
 architecture, training hyperparameters, and reproducibility settings.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -46,15 +48,18 @@ class Config(BaseModel):
     val_split: float = Field(
         default=0.05, description="Proportion of data for validation."
     )
-    batch_size: int = Field(default=4, description="Batch size.")
+    batch_size: int = Field(default=8, description="Batch size.")
 
     # Training
     max_epochs: int = Field(default=200, description="Maximum number of epochs.")
     early_stopping_patience: int = Field(
         default=10, description="Early stopping patience."
     )
-    learning_rate: float = Field(default=1e-4, description="Initial learning rate.")
+    learning_rate: float = Field(default=5e-5, description="Initial learning rate.")
     min_learning_rate: float = Field(default=1e-6, description="Minimum learning rate.")
+    lr_scheduler: Literal["onecycle", "constant"] = Field(
+        default="constant", description="Learning rate scheduler type."
+    )
     weight_decay: float = Field(default=1e-2, description="Weight decay for optimizer.")
     accumulate_grad_batches: int = Field(
         default=1, description="Number of gradient accumulation."

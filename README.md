@@ -405,7 +405,7 @@ print(f"Synchronization score: {similarity.item():.4f}")
 ### Related Work
 
 - **SyncNet**: [Out of time: automated lip sync in the wild](https://www.robots.ox.ac.uk/~vgg/software/lipsync/)
-- **PeAudioVideo**: HuggingFace Transformers multimodal encoder
+- **PeAudioVideo**: [HuggingFace Transformers multimodal encoder](https://huggingface.co/collections/facebook/perception-encoder-audio-visual)
 
 ## License
 
