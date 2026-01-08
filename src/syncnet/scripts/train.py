@@ -113,7 +113,7 @@ def main() -> None:
     # Setup callbacks
     lr_monitor = callbacks.LearningRateMonitor(logging_interval="step")
     early_stopping = callbacks.EarlyStopping(
-        monitor="val_loss", patience=config.early_stopping_patience, mode="max"
+        monitor="val_loss", patience=config.early_stopping_patience, mode="min"
     )
     model_checkpoint = callbacks.ModelCheckpoint(
         dirpath=log_path,
