@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 from torch.utils.data import Dataset
-from torchvision.io import read_video
+from torchcodec.decoders import AudioDecoder, VideoDecoder
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -80,5 +80,25 @@ class SyncNetDataset(Dataset):
             IndexError: If idx is out of bounds.
             RuntimeError: If the video file cannot be read or is corrupted.
         """
-        video, audio, metadata = read_video(str(self.sample_paths[idx]), pts_unit="sec")
+        video_path = str(self.sample_paths[idx])
+
+        # Load video frames
+        video_decoder = VideoDecoder(video_path)
+        frame_batch = video_decoder.get_frames_in_range(
+            0, video_decoder.metadata.num_frames
+        )
+        # Convert from (T, C, H, W) to (T, H, W, C) to match torchvision format
+        video = frame_batch.data.permute(0, 2, 3, 1)
+
+        # Load audio from the same video file
+        audio_decoder = AudioDecoder(video_path)
+        audio_samples = audio_decoder.get_all_samples()
+        audio = audio_samples.data  # Shape: (C, N), already normalized to [-1, 1]
+
+        # Build metadata dict to match torchvision format
+        metadata = {
+            "video_fps": video_decoder.metadata.average_fps,
+            "audio_fps": audio_samples.sample_rate,
+        }
+
         return video, audio, metadata
