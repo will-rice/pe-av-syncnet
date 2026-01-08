@@ -18,7 +18,7 @@ class Config(BaseModel):
 
     Attributes:
         seed: Random seed for reproducibility across runs.
-        test_split: Fraction of the dataset to use for validation/testing.
+        val_split: Fraction of the dataset to use for validation/testing.
         batch_size: Number of samples per batch during training.
         max_epochs: Maximum number of training epochs.
         early_stopping_patience: Number of epochs to wait before early stopping.
@@ -43,8 +43,8 @@ class Config(BaseModel):
     seed: int = Field(default=42, description="Random seed for reproducibility.")
 
     # Data
-    test_split: float = Field(
-        default=0.05, description="Proportion of data for val/testing."
+    val_split: float = Field(
+        default=0.05, description="Proportion of data for validation."
     )
     batch_size: int = Field(default=4, description="Batch size.")
 
