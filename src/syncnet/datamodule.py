@@ -154,24 +154,23 @@ class SyncNetDataModule(LightningDataModule):
             try:
                 video, audio, metadata = sample
                 audio = audio.mean(dim=0, keepdim=True)  # Convert to mono if stereo
+
+                # Randomly create negative samples by mixing audio/video
+                mix = random.random() > 0.5
                 video_segment, audio_segment = self.sample_random_segment(
                     video,
                     audio,
                     num_frames=self.config.num_frames,
                     fps=25,
                     sample_rate=16000,
+                    mix=mix,
                 )
                 if audio_segment.shape[1] < 3200:
                     continue
                 video_segment = self.resize(video_segment.permute(0, 3, 1, 2))
                 audio_segment = self.resample(audio_segment)
-                if random.random() > 0.5:
-                    audio_segment = audio_segment.roll(
-                        1 if random.random() > 0.5 else -1, dims=-1
-                    )
-                    label = torch.tensor(0.0)
-                else:
-                    label = torch.tensor(1.0)
+
+                label = torch.tensor(0.0 if mix else 1.0)
 
                 input_values = self.processor(
                     videos=video_segment,
@@ -200,6 +199,8 @@ class SyncNetDataModule(LightningDataModule):
         num_frames: int,
         fps: int = 25,
         sample_rate: int = 16000,
+        mix: bool = False,
+        min_offset: int = 1,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Sample a random temporal segment from video with corresponding audio.
 
@@ -215,6 +216,10 @@ class SyncNetDataModule(LightningDataModule):
             num_frames: Number of consecutive video frames to extract.
             fps: Frames per second of the video. Default: 25.
             sample_rate: Audio sample rate in Hz. Default: 16000.
+            mix: If True, sample audio from a different temporal position than
+                video to create a mismatched pair. Default: False.
+            min_offset: Minimum frame offset between video and audio positions
+                when mix=True. Default: 1.
 
         Returns:
             Tuple containing:
@@ -225,14 +230,23 @@ class SyncNetDataModule(LightningDataModule):
         Raises:
             ValueError: If num_frames exceeds the video length.
         """
-        start_frame = random.randint(0, video.shape[0] - num_frames)
-        video_segment = video[start_frame : start_frame + num_frames]
+        end_frame = video.shape[0] - num_frames
+        rand_video_idx = random.randint(0, end_frame)
+        video_segment = video[rand_video_idx : rand_video_idx + num_frames]
 
-        # Calculate corresponding audio segment
-        audio_start_frame = int(start_frame / fps * sample_rate)
         num_audio_samples = int(num_frames / fps * sample_rate)
-        audio_segment = audio[
-            :, audio_start_frame : audio_start_frame + num_audio_samples
-        ]
+
+        if mix:
+            # Sample audio from a different position than video
+            rand_audio_idx = random.randint(0, end_frame)
+            # Ensure audio and video are separated by at least min_offset frames
+            while abs(rand_audio_idx - rand_video_idx) <= min_offset:
+                rand_audio_idx = random.randint(0, end_frame)
+            audio_start = int(rand_audio_idx / fps * sample_rate)
+        else:
+            # Sample aligned audio
+            audio_start = int(rand_video_idx / fps * sample_rate)
+
+        audio_segment = audio[:, audio_start : audio_start + num_audio_samples]
 
         return video_segment, audio_segment
