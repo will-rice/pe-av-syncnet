@@ -53,7 +53,7 @@ class Config(BaseModel):
     # Training
     max_epochs: int = Field(default=200, description="Maximum number of epochs.")
     early_stopping_patience: int = Field(
-        default=10, description="Early stopping patience."
+        default=-1, description="Early stopping patience."
     )
     learning_rate: float = Field(default=5e-5, description="Initial learning rate.")
     min_learning_rate: float = Field(default=1e-6, description="Minimum learning rate.")

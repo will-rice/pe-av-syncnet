@@ -111,20 +111,24 @@ def main() -> None:
     )
 
     # Setup callbacks
-    lr_monitor = callbacks.LearningRateMonitor(logging_interval="step")
-    early_stopping = callbacks.EarlyStopping(
-        monitor="val_loss", patience=config.early_stopping_patience, mode="min"
+    callbacks_list: list[callbacks.Callback] = []
+    callbacks_list.append(callbacks.LearningRateMonitor(logging_interval="step"))
+    if config.early_stopping_patience > 0:
+        callbacks_list.append(
+            callbacks.EarlyStopping(
+                monitor="val_loss", patience=config.early_stopping_patience, mode="min"
+            )
+        )
+    callbacks_list.append(
+        callbacks.ModelCheckpoint(
+            dirpath=log_path,
+            filename="best-{epoch}-{val_loss:.4f}",
+            monitor="val_loss",
+            mode="min",
+            save_top_k=1,
+            save_last=True,
+        )
     )
-    model_checkpoint = callbacks.ModelCheckpoint(
-        dirpath=log_path,
-        filename="best-{epoch}-{val_loss:.4f}",
-        monitor="val_loss",
-        mode="min",
-        save_top_k=1,
-        save_last=True,
-    )
-
-    callbacks_list = [lr_monitor, early_stopping, model_checkpoint]
 
     # Setup trainer
     last_checkpoint = log_path / "last.ckpt"
@@ -142,7 +146,7 @@ def main() -> None:
         gradient_clip_val=config.gradient_clip_val,
         callbacks=callbacks_list,
         enable_checkpointing=True,
-        val_check_interval=1000,
+        val_check_interval=5000,
         limit_val_batches=100,
         fast_dev_run=args.fast_dev_run,
         strategy="deepspeed_stage_2" if args.num_devices > 1 else "auto",
