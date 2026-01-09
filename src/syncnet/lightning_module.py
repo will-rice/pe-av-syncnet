@@ -187,14 +187,16 @@ class SyncNetLightningModule(LightningModule):
             weight_decay=self.config.weight_decay,
         )
         if self.config.lr_scheduler == "onecycle":
-            lr_scheduler = torch.optim.lr_scheduler.OneCycleLR(
-                optimizer,
-                max_lr=self.config.learning_rate,
-                total_steps=self.config.max_epochs,
-                pct_start=0.1,
-                anneal_strategy="cos",
-                final_div_factor=self.config.learning_rate
-                / self.config.min_learning_rate,
+            lr_scheduler: torch.optim.lr_scheduler.LRScheduler = (
+                torch.optim.lr_scheduler.OneCycleLR(
+                    optimizer,
+                    max_lr=self.config.learning_rate,
+                    total_steps=self.config.max_epochs,
+                    pct_start=0.1,
+                    anneal_strategy="cos",
+                    final_div_factor=self.config.learning_rate
+                    / self.config.min_learning_rate,
+                )
             )
         elif self.config.lr_scheduler == "constant":
             lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
