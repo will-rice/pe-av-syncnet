@@ -33,7 +33,6 @@ def main() -> None:
 
     Command-line Arguments:
         data_root: Path to directory containing video files
-        --project: Project name for logging (default: "template")
         --num_devices: Number of GPUs to use (default: 1)
         --num_workers: Number of data loading workers (default: 12)
         --log_root: Directory for saving logs and checkpoints (default: "logs")
@@ -51,12 +50,10 @@ def main() -> None:
 
     Example:
         >>> # In command line:
-        >>> python -m syncnet.scripts.train /data/videos \\
-        ...     --num_devices 4 --num_workers 16 --project my_experiment
+        >>> uv run train /data/videos --num_devices 4 --num_workers 16
     """
     parser = ArgumentParser(description="Train script.")
     parser.add_argument("data_root", type=Path)
-    parser.add_argument("--project", default="template", type=str)
     parser.add_argument("--num_devices", default=1, type=int)
     parser.add_argument("--num_workers", default=12, type=int)
     parser.add_argument("--log_root", default="logs", type=Path)
