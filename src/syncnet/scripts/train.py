@@ -111,15 +111,8 @@ def main() -> None:
     )
 
     # Setup callbacks
-    callbacks_list: list[callbacks.Callback] = []
-    callbacks_list.append(callbacks.LearningRateMonitor(logging_interval="step"))
-    if config.early_stopping_patience > 0:
-        callbacks_list.append(
-            callbacks.EarlyStopping(
-                monitor="val_loss", patience=config.early_stopping_patience, mode="min"
-            )
-        )
-    callbacks_list.append(
+    callbacks_list: list[callbacks.Callback] = [
+        callbacks.LearningRateMonitor(logging_interval="step"),
         callbacks.ModelCheckpoint(
             dirpath=log_path,
             filename="best-{epoch}-{val_loss:.4f}",
@@ -127,14 +120,20 @@ def main() -> None:
             mode="min",
             save_top_k=1,
             save_last=True,
+        ),
+    ]
+    if config.early_stopping_patience > 0:
+        callbacks_list.append(
+            callbacks.EarlyStopping(
+                monitor="val_loss", patience=config.early_stopping_patience, mode="min"
+            )
         )
+
+    last_checkpoint = (
+        args.checkpoint_path if args.checkpoint_path else log_path / "last.ckpt"
     )
 
     # Setup trainer
-    last_checkpoint = log_path / "last.ckpt"
-    if args.checkpoint_path:
-        last_checkpoint = args.checkpoint_path
-
     trainer = Trainer(
         default_root_dir=log_path,
         max_epochs=config.max_epochs,
