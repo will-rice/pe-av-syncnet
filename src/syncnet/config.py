@@ -55,7 +55,7 @@ class Config(BaseModel):
     early_stopping_patience: int = Field(
         default=-1, description="Early stopping patience."
     )
-    learning_rate: float = Field(default=5e-5, description="Initial learning rate.")
+    learning_rate: float = Field(default=1e-4, description="Initial learning rate.")
     min_learning_rate: float = Field(default=1e-6, description="Minimum learning rate.")
     lr_scheduler: Literal["onecycle", "constant"] = Field(
         default="constant", description="Learning rate scheduler type."

@@ -59,3 +59,4 @@ exclude = [".venv"]
 [project.scripts]
 train = "syncnet.scripts.train:main"
 compile = "syncnet.scripts.compile:main"
+filter = "syncnet.scripts.filter_bad_videos:main"
