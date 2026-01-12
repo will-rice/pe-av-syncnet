@@ -80,7 +80,7 @@ class SyncNetLightningModule(LightningModule):
         self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
         self.lowest_val_loss = float("inf")
 
-    def training_step(self, batch: Batch, batch_idx: int) -> None:
+    def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step.
 
         Performs forward pass through the model, computes loss, and logs metrics.
@@ -100,7 +100,7 @@ class SyncNetLightningModule(LightningModule):
         self.log("train_loss", self.train_loss(loss), prog_bar=True)
         return loss
 
-    def validation_step(self, batch: Batch, batch_idx: int) -> None:
+    def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step.
 
         Performs forward pass and computes validation metrics without gradient

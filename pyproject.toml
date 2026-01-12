@@ -58,4 +58,3 @@ exclude = [".venv"]
 
 [project.scripts]
 train = "syncnet.scripts.train:main"
-compile = "syncnet.scripts.compile:main"
