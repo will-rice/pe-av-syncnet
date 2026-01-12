@@ -164,19 +164,21 @@ class SyncNetLightningModule(LightningModule):
         self.val_loss.reset()
         garbage_collection_cuda()
 
-    def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list]:
+    def configure_optimizers(
+        self,
+    ) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
         """Configure optimizers and learning rate schedulers.
 
-        Sets up AdamW optimizer with weight decay and OneCycleLR scheduler
-        for cosine annealing learning rate schedule with warmup.
+        Sets up AdamW optimizer with weight decay and a configurable scheduler
+        (constant or OneCycleLR with cosine annealing).
 
         Returns:
             Tuple containing:
                 - List with single AdamW optimizer
-                - List with single OneCycleLR scheduler
+                - List with single LR scheduler
 
         Note:
-            The scheduler uses:
+            When using OneCycleLR scheduler:
             - 10% of training for warmup (pct_start=0.1)
             - Cosine annealing strategy
             - Final learning rate of config.min_learning_rate
