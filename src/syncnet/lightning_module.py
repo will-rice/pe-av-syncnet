@@ -5,6 +5,7 @@ checkpointing for the SyncNet audio-visual synchronization model using PyTorch
 Lightning framework.
 """
 
+import logging
 from pathlib import Path
 
 import torch
@@ -17,6 +18,8 @@ from transformers.models.pe_audio_video import PeAudioVideoProcessor
 from syncnet.config import Config
 from syncnet.datasets import Batch
 from syncnet.modeling.model import SyncNet, SyncNetConfig
+
+logger = logging.getLogger(__name__)
 
 
 class SyncNetLightningModule(LightningModule):
@@ -80,7 +83,7 @@ class SyncNetLightningModule(LightningModule):
         self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
         self.lowest_val_loss = float("inf")
 
-    def training_step(self, batch: Batch, batch_idx: int) -> None:
+    def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step.
 
         Performs forward pass through the model, computes loss, and logs metrics.
@@ -100,7 +103,7 @@ class SyncNetLightningModule(LightningModule):
         self.log("train_loss", self.train_loss(loss), prog_bar=True)
         return loss
 
-    def validation_step(self, batch: Batch, batch_idx: int) -> None:
+    def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step.
 
         Performs forward pass and computes validation metrics without gradient
@@ -158,25 +161,27 @@ class SyncNetLightningModule(LightningModule):
                         private=True,
                     )
                 except Exception as e:
-                    print(f"Failed to push to hub: {e}")
+                    logger.warning(f"Failed to push to hub: {e}")
 
         self.val_metrics.reset()
         self.val_loss.reset()
         garbage_collection_cuda()
 
-    def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list]:
+    def configure_optimizers(
+        self,
+    ) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler.LRScheduler]]:
         """Configure optimizers and learning rate schedulers.
 
-        Sets up AdamW optimizer with weight decay and OneCycleLR scheduler
-        for cosine annealing learning rate schedule with warmup.
+        Sets up AdamW optimizer with weight decay and a configurable scheduler
+        (constant or OneCycleLR with cosine annealing).
 
         Returns:
             Tuple containing:
                 - List with single AdamW optimizer
-                - List with single OneCycleLR scheduler
+                - List with single LR scheduler
 
         Note:
-            The scheduler uses:
+            When using OneCycleLR scheduler:
             - 10% of training for warmup (pct_start=0.1)
             - Cosine annealing strategy
             - Final learning rate of config.min_learning_rate

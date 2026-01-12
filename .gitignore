@@ -172,3 +172,7 @@ cython_debug/
 
 # MacOS
 .DS_Store
+
+# Training outputs
+logs/
+wandb/

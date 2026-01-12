@@ -5,6 +5,7 @@ SyncNet models using PyTorch Lightning. It handles dataset splitting, batch
 collation, audio-visual preprocessing, and data augmentation.
 """
 
+import logging
 import random
 
 import torch
@@ -16,6 +17,8 @@ from transformers.models.pe_audio_video import PeAudioVideoProcessor
 
 from syncnet.config import Config
 from syncnet.datasets import Batch
+
+logger = logging.getLogger(__name__)
 
 
 class SyncNetDataModule(LightningDataModule):
@@ -186,7 +189,7 @@ class SyncNetDataModule(LightningDataModule):
                 audio_segments.append(input_values["input_values"][0])
                 labels.append(label)
             except Exception as e:
-                print(f"Error processing sample: {e}")
+                logger.warning(f"Error processing sample: {e}")
                 continue
 
         return Batch(

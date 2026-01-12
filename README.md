@@ -248,14 +248,15 @@ class Config(BaseModel):
     seed: int = 42
 
     # Data
-    test_split: float = 0.05
-    batch_size: int = 4
+    val_split: float = 0.05
+    batch_size: int = 8
 
     # Training
     max_epochs: int = 200
     early_stopping_patience: int = 10
-    learning_rate: float = 1e-4
+    learning_rate: float = 5e-5
     min_learning_rate: float = 1e-6
+    lr_scheduler: Literal["onecycle", "constant"] = "constant"
     weight_decay: float = 1e-2
     accumulate_grad_batches: int = 1
     gradient_clip_val: float = 1.0
@@ -273,8 +274,9 @@ class Config(BaseModel):
 - **base_model**: HuggingFace model ID for the pretrained encoder
 - **num_frames**: Number of video frames per sample (5 frames = 0.2s at 25fps)
 - **negative_fraction**: Proportion of negative samples (0.5 = 50% out-of-sync)
-- **batch_size**: Adjust based on GPU memory (4 works well for most GPUs)
-- **learning_rate**: Initial learning rate with OneCycleLR scheduler
+- **batch_size**: Adjust based on GPU memory (8 is the default, works well for most GPUs)
+- **learning_rate**: Initial learning rate (5e-5 by default)
+- **lr_scheduler**: Learning rate scheduler type ("constant" or "onecycle")
 
 ## Training Details
 
@@ -288,8 +290,8 @@ class Config(BaseModel):
 ### Optimization
 
 - **Optimizer**: AdamW with weight decay
-- **Scheduler**: OneCycleLR with cosine annealing
-  - 10% warmup period
+- **Scheduler**: Configurable (constant by default, or OneCycleLR with cosine annealing)
+  - OneCycleLR: 10% warmup period, cosine annealing
   - Peak learning rate: `config.learning_rate`
   - Final learning rate: `config.min_learning_rate`
 
