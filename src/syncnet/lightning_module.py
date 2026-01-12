@@ -5,6 +5,7 @@ checkpointing for the SyncNet audio-visual synchronization model using PyTorch
 Lightning framework.
 """
 
+import logging
 from pathlib import Path
 
 import torch
@@ -17,6 +18,8 @@ from transformers.models.pe_audio_video import PeAudioVideoProcessor
 from syncnet.config import Config
 from syncnet.datasets import Batch
 from syncnet.modeling.model import SyncNet, SyncNetConfig
+
+logger = logging.getLogger(__name__)
 
 
 class SyncNetLightningModule(LightningModule):
@@ -158,7 +161,7 @@ class SyncNetLightningModule(LightningModule):
                         private=True,
                     )
                 except Exception as e:
-                    print(f"Failed to push to hub: {e}")
+                    logger.warning(f"Failed to push to hub: {e}")
 
         self.val_metrics.reset()
         self.val_loss.reset()
