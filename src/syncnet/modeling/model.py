@@ -54,8 +54,8 @@ class SyncNet(PreTrainedModel):
     1. Feature extraction using pretrained encoder
     2. Flattening of temporal/spatial dimensions
     3. L2 normalization of embeddings
-    4. ReLU activation for non-negative similarities
-    5. Cosine similarity computation
+    4. Cosine similarity computation
+    5. Scaling from [-1, 1] to [0, 1] for BCE loss compatibility
 
     Attributes:
         encoder: Pretrained PeAudioVideoModel for feature extraction.
@@ -106,14 +106,14 @@ class SyncNet(PreTrainedModel):
             better synchronization. Shape: (batch_size,).
 
         Note:
-            The embeddings are flattened, L2-normalized, and ReLU-activated
-            before similarity computation to ensure positive, bounded scores.
+            The embeddings are flattened and L2-normalized before similarity
+            computation. Output is scaled from [-1, 1] to [0, 1] for BCE loss.
         """
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        audio_emb = outputs.audio_embeds.relu()
-        face_emb = outputs.video_embeds.relu()
+        audio_emb = outputs.audio_embeds
+        face_emb = outputs.video_embeds
 
         audio_emb = audio_emb.view(audio_emb.size(0), -1)
         face_emb = face_emb.view(face_emb.size(0), -1)
@@ -122,4 +122,5 @@ class SyncNet(PreTrainedModel):
         face_emb = nn.functional.normalize(face_emb, p=2.0, dim=1)
 
         similarity = self.similarity_fn(audio_emb, face_emb).squeeze(-1)
-        return similarity
+        # Scale from [-1, 1] to [0, 1] for BCE loss
+        return (similarity + 1) / 2
