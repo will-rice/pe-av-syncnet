@@ -7,7 +7,6 @@ audio and video embeddings.
 """
 
 import torch
-import torch.nn as nn
 from transformers import PreTrainedConfig, PreTrainedModel
 from transformers.models.pe_audio_video import PeAudioVideoModel
 
@@ -74,7 +73,6 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
         self.encoder.gradient_checkpointing = True
-        self.similarity_fn = nn.CosineSimilarity(dim=-1)
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
@@ -91,23 +89,6 @@ class SyncNet(PreTrainedModel):
             Sync logits. Shape: (batch_size,).
             Positive values indicate synchronized, negative indicate out-of-sync.
         """
-        outputs = self.encoder(
+        return self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
-        )
-        return self.similarity_fn(
-            outputs.audio_embeds.relu(), outputs.video_embeds.relu()
-        )
-
-    def get_sync_probability(
-        self, input_values: torch.Tensor, pixel_values: torch.Tensor
-    ) -> torch.Tensor:
-        """Compute probability that audio and video are synchronized.
-
-        Args:
-            input_values: Preprocessed audio tensor from the processor.
-            pixel_values: Preprocessed video frames from the processor.
-
-        Returns:
-            Probability scores in [0, 1]. Shape: (batch_size,).
-        """
-        return torch.sigmoid(self(input_values, pixel_values))
+        ).logits_audio_video
