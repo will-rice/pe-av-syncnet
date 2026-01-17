@@ -45,11 +45,12 @@ class SyncNetConfig(PreTrainedConfig):
 class SyncNet(PreTrainedModel):
     """Audio-Visual Synchronization Model using pretrained encoder.
 
-    This model computes the Euclidean distance between L2-normalized audio
-    and video embeddings. Lower distance means more synchronized.
+    This model outputs sync logits based on the distance between L2-normalized
+    audio and video embeddings. Positive logits indicate synchronized pairs.
 
     Attributes:
         encoder: Pretrained PeAudioVideoModel for feature extraction.
+        logit_scale: Learnable temperature parameter for scaling logits.
 
     Args:
         config: SyncNetConfig containing model configuration including
@@ -60,8 +61,8 @@ class SyncNet(PreTrainedModel):
         >>> model = SyncNet(config)
         >>> audio = torch.randn(4, 1024)
         >>> video = torch.randn(4, 5, 3, 224, 224)
-        >>> distance = model(audio, video)
-        >>> print(distance.shape)
+        >>> logits = model(audio, video)
+        >>> print(logits.shape)
         torch.Size([4])
     """
 
@@ -74,11 +75,12 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
         self.encoder.gradient_checkpointing = True
+        self.logit_scale = nn.Parameter(torch.tensor(5.0))
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
     ) -> torch.Tensor:
-        """Compute Euclidean distance between audio and video embeddings.
+        """Compute sync logits for audio-video pairs.
 
         Args:
             input_values: Preprocessed audio tensor from the processor.
@@ -87,33 +89,27 @@ class SyncNet(PreTrainedModel):
                 Shape: (batch_size, num_frames, channels, height, width).
 
         Returns:
-            Euclidean distance between embeddings. Shape: (batch_size,).
-            Lower values indicate better synchronization.
+            Sync logits. Shape: (batch_size,).
+            Positive values indicate synchronized, negative indicate out-of-sync.
         """
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
         audio_emb = nn.functional.normalize(outputs.audio_embeds, p=2.0, dim=1)
         video_emb = nn.functional.normalize(outputs.video_embeds, p=2.0, dim=1)
-        return nn.functional.pairwise_distance(audio_emb, video_emb)
+        distance = nn.functional.pairwise_distance(audio_emb, video_emb)
+        return self.logit_scale * (1.0 - distance)
 
     def get_sync_probability(
-        self,
-        input_values: torch.Tensor,
-        pixel_values: torch.Tensor,
-        margin: float = 1.0,
-        temperature: float = 5.0,
+        self, input_values: torch.Tensor, pixel_values: torch.Tensor
     ) -> torch.Tensor:
         """Compute probability that audio and video are synchronized.
 
         Args:
             input_values: Preprocessed audio tensor from the processor.
             pixel_values: Preprocessed video frames from the processor.
-            margin: Decision boundary distance (should match training). Default: 1.0.
-            temperature: Controls sharpness of probability transition. Default: 5.0.
 
         Returns:
             Probability scores in [0, 1]. Shape: (batch_size,).
         """
-        distance = self(input_values, pixel_values)
-        return torch.sigmoid((margin - distance) * temperature)
+        return torch.sigmoid(self(input_values, pixel_values))

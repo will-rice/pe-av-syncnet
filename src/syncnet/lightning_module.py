@@ -8,6 +8,7 @@ Lightning framework.
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 from lightning.pytorch import LightningModule
 from lightning.pytorch.utilities.memory import garbage_collection_cuda
 from torchmetrics import Accuracy, MeanMetric, MetricCollection
@@ -15,7 +16,6 @@ from transformers.models.pe_audio_video import PeAudioVideoProcessor
 
 from syncnet.config import Config
 from syncnet.datasets import Batch
-from syncnet.losses import ContrastiveLoss
 from syncnet.modeling.model import SyncNet, SyncNetConfig
 
 
@@ -26,17 +26,16 @@ class SyncNetLightningModule(LightningModule):
     initialization, training/validation steps, metric tracking, optimizer
     configuration, and optional model uploading to HuggingFace Hub.
 
-    The module uses contrastive loss to train the model to produce embeddings
-    that are close for synchronized audio-visual pairs and far apart for
-    out-of-sync pairs. It tracks training loss, validation loss, and validation
-    accuracy, and automatically saves the best model based on validation loss.
+    The module uses BCE with logits loss to train the model to output positive
+    logits for synchronized audio-visual pairs and negative logits for out-of-sync
+    pairs. It tracks training loss, validation loss, and validation accuracy.
 
     Attributes:
         config: Configuration object with training hyperparameters.
         model: SyncNet model for audio-visual synchronization.
         push_to_hub: Whether to push model checkpoints to HuggingFace Hub.
         sync_dist: Whether to synchronize metrics across distributed processes.
-        loss_fn: Contrastive loss function.
+        loss_fn: BCE with logits loss function.
         train_loss: Metric for tracking mean training loss.
         val_loss: Metric for tracking mean validation loss.
         val_metrics: Collection of validation metrics including accuracy.
@@ -49,31 +48,19 @@ class SyncNetLightningModule(LightningModule):
             validation loss improves. Default: False.
         sync_dist: If True, synchronize metrics across distributed processes
             during multi-GPU training. Default: False.
-
-    Example:
-        >>> config = Config(learning_rate=1e-4, max_epochs=100)
-        >>> module = SyncNetLightningModule(config, push_to_hub=True)
-        >>> trainer = Trainer(max_epochs=100)
-        >>> trainer.fit(module, datamodule)
     """
 
     def __init__(
         self, config: Config, push_to_hub: bool = False, sync_dist: bool = False
     ) -> None:
-        """Initialize the Lightning Module with config and training options.
-
-        Args:
-            config: Configuration object with model and training settings.
-            push_to_hub: Whether to push to HuggingFace Hub on improvement.
-            sync_dist: Whether to sync metrics across distributed processes.
-        """
+        """Initialize the Lightning Module with config and training options."""
         super().__init__()
         self.save_hyperparameters(config.model_dump())
         self.config = config
         self.model = SyncNet(SyncNetConfig(**config.model_dump()))
         self.push_to_hub = push_to_hub
         self.sync_dist = sync_dist
-        self.loss_fn = ContrastiveLoss(margin=1.0)
+        self.loss_fn = nn.BCEWithLogitsLoss()
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.val_metrics = MetricCollection({"val_accuracy": Accuracy(task="binary")})
@@ -81,42 +68,20 @@ class SyncNetLightningModule(LightningModule):
         self.lowest_val_loss = float("inf")
 
     def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
-        """Execute a single training step.
-
-        Performs forward pass through the model, computes contrastive loss,
-        and logs metrics.
-
-        Args:
-            batch: Batch object containing audio, video, and labels.
-            batch_idx: Index of the current batch (unused but required by Lightning).
-
-        Returns:
-            Loss tensor for backpropagation.
-        """
-        distance = self.model(batch.audio, batch.video)
+        """Execute a single training step."""
+        logits = self.model(batch.audio, batch.video)
         with torch.autocast(device_type=self.device.type, enabled=False):
-            loss = self.loss_fn(distance, batch.labels.squeeze(-1))
+            loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.log("train_loss", self.train_loss(loss), prog_bar=True)
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
-        """Execute a single validation step.
-
-        Performs forward pass and computes validation metrics without gradient
-        computation. Updates running metrics for loss and accuracy.
-
-        Args:
-            batch: Batch object containing audio, video, and labels.
-            batch_idx: Index of the current batch (unused but required by Lightning).
-
-        Returns:
-            Loss tensor for the validation batch.
-        """
-        distance = self.model(batch.audio, batch.video)
+        """Execute a single validation step."""
+        logits = self.model(batch.audio, batch.video)
         with torch.autocast(device_type=self.device.type, enabled=False):
-            loss = self.loss_fn(distance, batch.labels.squeeze(-1))
+            loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.val_loss.update(loss)
-        predictions = (distance < self.loss_fn.margin / 2).float()
+        predictions = (logits > 0).float()
         self.val_metrics.update(predictions, batch.labels.squeeze(-1))
         return loss
 
