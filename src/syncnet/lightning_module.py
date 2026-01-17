@@ -10,12 +10,12 @@ from pathlib import Path
 import torch
 from lightning.pytorch import LightningModule
 from lightning.pytorch.utilities.memory import garbage_collection_cuda
-from torch import nn
 from torchmetrics import Accuracy, MeanMetric, MetricCollection
 from transformers.models.pe_audio_video import PeAudioVideoProcessor
 
 from syncnet.config import Config
 from syncnet.datasets import Batch
+from syncnet.losses import ContrastiveLoss
 from syncnet.modeling.model import SyncNet, SyncNetConfig
 
 
@@ -26,17 +26,17 @@ class SyncNetLightningModule(LightningModule):
     initialization, training/validation steps, metric tracking, optimizer
     configuration, and optional model uploading to HuggingFace Hub.
 
-    The module uses Binary Cross-Entropy loss to train the model to distinguish
-    between synchronized and out-of-sync audio-visual pairs. It tracks training
-    loss, validation loss, and validation accuracy, and automatically saves the
-    best model based on validation loss.
+    The module uses contrastive loss to train the model to produce embeddings
+    that are close for synchronized audio-visual pairs and far apart for
+    out-of-sync pairs. It tracks training loss, validation loss, and validation
+    accuracy, and automatically saves the best model based on validation loss.
 
     Attributes:
         config: Configuration object with training hyperparameters.
         model: SyncNet model for audio-visual synchronization.
         push_to_hub: Whether to push model checkpoints to HuggingFace Hub.
         sync_dist: Whether to synchronize metrics across distributed processes.
-        loss_fn: Binary cross-entropy loss function.
+        loss_fn: Contrastive loss function.
         train_loss: Metric for tracking mean training loss.
         val_loss: Metric for tracking mean validation loss.
         val_metrics: Collection of validation metrics including accuracy.
@@ -73,19 +73,18 @@ class SyncNetLightningModule(LightningModule):
         self.model = SyncNet(SyncNetConfig(**config.model_dump()))
         self.push_to_hub = push_to_hub
         self.sync_dist = sync_dist
-        self.loss_fn = nn.BCELoss()
+        self.loss_fn = ContrastiveLoss(margin=1.0)
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.val_metrics = MetricCollection({"val_accuracy": Accuracy(task="binary")})
         self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
         self.lowest_val_loss = float("inf")
 
-    def training_step(self, batch: Batch, batch_idx: int) -> None:
+    def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step.
 
-        Performs forward pass through the model, computes loss, and logs metrics.
-        The loss is computed using Binary Cross-Entropy between predicted
-        similarity scores and ground truth labels.
+        Performs forward pass through the model, computes contrastive loss,
+        and logs metrics.
 
         Args:
             batch: Batch object containing audio, video, and labels.
@@ -94,13 +93,13 @@ class SyncNetLightningModule(LightningModule):
         Returns:
             Loss tensor for backpropagation.
         """
-        similarity = self.model(batch.audio, batch.video)
+        distance = self.model(batch.audio, batch.video)
         with torch.autocast(device_type=self.device.type, enabled=False):
-            loss = self.loss_fn(similarity.squeeze(-1), batch.labels.squeeze(-1))
+            loss = self.loss_fn(distance, batch.labels.squeeze(-1))
         self.log("train_loss", self.train_loss(loss), prog_bar=True)
         return loss
 
-    def validation_step(self, batch: Batch, batch_idx: int) -> None:
+    def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step.
 
         Performs forward pass and computes validation metrics without gradient
@@ -113,11 +112,12 @@ class SyncNetLightningModule(LightningModule):
         Returns:
             Loss tensor for the validation batch.
         """
-        similarity = self.model(batch.audio, batch.video)
+        distance = self.model(batch.audio, batch.video)
         with torch.autocast(device_type=self.device.type, enabled=False):
-            loss = self.loss_fn(similarity.squeeze(-1), batch.labels.squeeze(-1))
+            loss = self.loss_fn(distance, batch.labels.squeeze(-1))
         self.val_loss.update(loss)
-        self.val_metrics.update(similarity.squeeze(-1), batch.labels.squeeze(-1))
+        predictions = (distance < self.loss_fn.margin / 2).float()
+        self.val_metrics.update(predictions, batch.labels.squeeze(-1))
         return loss
 
     def on_validation_epoch_end(self) -> None:

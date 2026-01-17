@@ -2,7 +2,7 @@
 
 This module implements the SyncNet model that learns to determine whether
 audio and video streams are temporally synchronized. The model uses a
-pretrained audio-visual encoder and computes cosine similarity between
+pretrained audio-visual encoder and computes the Euclidean distance between
 audio and video embeddings.
 """
 
@@ -45,21 +45,11 @@ class SyncNetConfig(PreTrainedConfig):
 class SyncNet(PreTrainedModel):
     """Audio-Visual Synchronization Model using pretrained encoder.
 
-    This model determines whether audio and video streams are synchronized
-    by computing the similarity between learned embeddings. It uses a
-    pretrained audio-visual encoder (PeAudioVideo) to extract separate
-    embeddings for audio and video, then computes their cosine similarity.
-
-    The model applies:
-    1. Feature extraction using pretrained encoder
-    2. Flattening of temporal/spatial dimensions
-    3. L2 normalization of embeddings
-    4. Cosine similarity computation
-    5. Scaling from [-1, 1] to [0, 1] for BCE loss compatibility
+    This model computes the Euclidean distance between L2-normalized audio
+    and video embeddings. Lower distance means more synchronized.
 
     Attributes:
         encoder: Pretrained PeAudioVideoModel for feature extraction.
-        similarity_fn: Cosine similarity function for comparing embeddings.
 
     Args:
         config: SyncNetConfig containing model configuration including
@@ -70,8 +60,8 @@ class SyncNet(PreTrainedModel):
         >>> model = SyncNet(config)
         >>> audio = torch.randn(4, 1024)
         >>> video = torch.randn(4, 5, 3, 224, 224)
-        >>> similarity = model(audio, video)
-        >>> print(similarity.shape)
+        >>> distance = model(audio, video)
+        >>> print(distance.shape)
         torch.Size([4])
     """
 
@@ -84,16 +74,11 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
         self.encoder.gradient_checkpointing = True
-        self.similarity_fn = nn.CosineSimilarity(dim=-1)
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
     ) -> torch.Tensor:
-        """Compute synchronization similarity between audio and video.
-
-        Processes audio and video inputs through the encoder, normalizes
-        the resulting embeddings, and computes cosine similarity to determine
-        if they are synchronized.
+        """Compute Euclidean distance between audio and video embeddings.
 
         Args:
             input_values: Preprocessed audio tensor from the processor.
@@ -102,25 +87,33 @@ class SyncNet(PreTrainedModel):
                 Shape: (batch_size, num_frames, channels, height, width).
 
         Returns:
-            Similarity scores between 0 and 1, where higher values indicate
-            better synchronization. Shape: (batch_size,).
-
-        Note:
-            The embeddings are flattened and L2-normalized before similarity
-            computation. Output is scaled from [-1, 1] to [0, 1] for BCE loss.
+            Euclidean distance between embeddings. Shape: (batch_size,).
+            Lower values indicate better synchronization.
         """
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        audio_emb = outputs.audio_embeds
-        face_emb = outputs.video_embeds
+        audio_emb = nn.functional.normalize(outputs.audio_embeds, p=2.0, dim=1)
+        video_emb = nn.functional.normalize(outputs.video_embeds, p=2.0, dim=1)
+        return nn.functional.pairwise_distance(audio_emb, video_emb)
 
-        audio_emb = audio_emb.view(audio_emb.size(0), -1)
-        face_emb = face_emb.view(face_emb.size(0), -1)
+    def get_sync_probability(
+        self,
+        input_values: torch.Tensor,
+        pixel_values: torch.Tensor,
+        margin: float = 1.0,
+        temperature: float = 5.0,
+    ) -> torch.Tensor:
+        """Compute probability that audio and video are synchronized.
 
-        audio_emb = nn.functional.normalize(audio_emb, p=2.0, dim=1)
-        face_emb = nn.functional.normalize(face_emb, p=2.0, dim=1)
+        Args:
+            input_values: Preprocessed audio tensor from the processor.
+            pixel_values: Preprocessed video frames from the processor.
+            margin: Decision boundary distance (should match training). Default: 1.0.
+            temperature: Controls sharpness of probability transition. Default: 5.0.
 
-        similarity = self.similarity_fn(audio_emb, face_emb).squeeze(-1)
-        # Scale from [-1, 1] to [0, 1] for BCE loss
-        return (similarity + 1) / 2
+        Returns:
+            Probability scores in [0, 1]. Shape: (batch_size,).
+        """
+        distance = self(input_values, pixel_values)
+        return torch.sigmoid((margin - distance) * temperature)

@@ -16,6 +16,12 @@ from syncnet.datamodule import SyncNetDataModule
 from syncnet.datasets.dataset import SyncNetDataset
 from syncnet.lightning_module import SyncNetLightningModule
 
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.set_float32_matmul_precision("medium")
+
 
 def main() -> None:
     r"""Execute the training pipeline for SyncNet models.
