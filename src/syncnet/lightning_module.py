@@ -60,7 +60,7 @@ class SyncNetLightningModule(LightningModule):
         self.model = SyncNet(SyncNetConfig(**config.model_dump()))
         self.push_to_hub = push_to_hub
         self.sync_dist = sync_dist
-        self.loss_fn = nn.BCEWithLogitsLoss()
+        self.loss_fn = nn.BCELoss()
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.val_metrics = MetricCollection({"val_accuracy": Accuracy(task="binary")})
@@ -70,14 +70,16 @@ class SyncNetLightningModule(LightningModule):
     def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step."""
         logits = self.model(batch.audio, batch.video)
-        loss = self.loss_fn(logits, batch.labels.squeeze(-1))
+        with torch.autocast(self.device.type, enabled=False):
+            loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.log("train_loss", self.train_loss(loss), prog_bar=True)
         return loss
 
     def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step."""
         logits = self.model(batch.audio, batch.video)
-        loss = self.loss_fn(logits, batch.labels.squeeze(-1))
+        with torch.autocast(self.device.type, enabled=False):
+            loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.val_loss.update(loss)
         self.val_metrics.update(logits, batch.labels.squeeze(-1))
         return loss
