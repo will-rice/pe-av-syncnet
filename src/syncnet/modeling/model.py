@@ -72,9 +72,10 @@ class SyncNet(PreTrainedModel):
             config: Configuration object containing model parameters.
         """
         super().__init__(config=config)
-        self.encoder = PeAudioVideoModel.from_pretrained(config.base_model).train()
+        self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
         self.encoder.gradient_checkpointing_enable()
         self.similarity_fn = nn.CosineSimilarity(dim=-1)
+        self.logit_scale = nn.Parameter(torch.tensor(0.0))  # exp(0)=1
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
@@ -89,11 +90,12 @@ class SyncNet(PreTrainedModel):
 
         Returns:
             Sync logits. Shape: (batch_size,).
-            Positive values indicate synchronized, negative indicate out-of-sync.
         """
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        return self.similarity_fn(
-            outputs.audio_embeds.relu(), outputs.video_embeds.relu()
-        )
+        audio_emb = nn.functional.normalize(outputs.audio_embeds, 2.0, -1)
+        video_emb = nn.functional.normalize(outputs.video_embeds, 2.0, -1)
+        sim = (audio_emb * video_emb).sum(dim=-1)
+        logits = sim * self.logit_scale.exp()
+        return logits
