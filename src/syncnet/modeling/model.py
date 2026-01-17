@@ -74,7 +74,11 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model).train()
         self.encoder.gradient_checkpointing = True
-        self.similarity_fn = nn.CosineSimilarity(dim=-1)
+        self.head = nn.Sequential(
+            nn.LayerNorm(self.encoder.config.hidden_size),
+            nn.Linear(self.encoder.config.hidden_size, 1),
+            nn.ReLU(inplace=True),
+        )
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
@@ -94,20 +98,4 @@ class SyncNet(PreTrainedModel):
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        return self.similarity_fn(
-            outputs.audio_embeds.relu(), outputs.video_embeds.relu()
-        )
-
-    def get_sync_probability(
-        self, input_values: torch.Tensor, pixel_values: torch.Tensor
-    ) -> torch.Tensor:
-        """Compute probability that audio and video are synchronized.
-
-        Args:
-            input_values: Preprocessed audio tensor from the processor.
-            pixel_values: Preprocessed video frames from the processor.
-
-        Returns:
-            Probability scores in [0, 1]. Shape: (batch_size,).
-        """
-        return torch.sigmoid(self(input_values, pixel_values))
+        return self.head(outputs.audio_video_embeds).squeeze(-1)
