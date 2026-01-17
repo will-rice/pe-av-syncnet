@@ -57,7 +57,7 @@ class SyncNetLightningModule(LightningModule):
         super().__init__()
         self.save_hyperparameters(config.model_dump())
         self.config = config
-        self.model = SyncNet(SyncNetConfig(**config.model_dump())).train()
+        self.model = SyncNet(SyncNetConfig(**config.model_dump()))
         self.push_to_hub = push_to_hub
         self.sync_dist = sync_dist
         self.loss_fn = nn.BCEWithLogitsLoss()
@@ -66,6 +66,10 @@ class SyncNetLightningModule(LightningModule):
         self.val_metrics = MetricCollection({"val_accuracy": Accuracy(task="binary")})
         self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
         self.lowest_val_loss = float("inf")
+
+    def configure_model(self) -> None:
+        """Set the model to training mode."""
+        self.model.train()
 
     def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step."""
