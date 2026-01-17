@@ -77,7 +77,6 @@ class SyncNet(PreTrainedModel):
         self.head = nn.Sequential(
             nn.LayerNorm(1024),
             nn.Linear(1024, 1),
-            nn.ReLU(inplace=True),
         )
 
     def forward(
