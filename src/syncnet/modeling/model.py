@@ -75,8 +75,8 @@ class SyncNet(PreTrainedModel):
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model).train()
         self.encoder.gradient_checkpointing = True
         self.head = nn.Sequential(
-            nn.LayerNorm(self.encoder.config.hidden_size),
-            nn.Linear(self.encoder.config.hidden_size, 1),
+            nn.LayerNorm(1024),
+            nn.Linear(1024, 1),
             nn.ReLU(inplace=True),
         )
 
