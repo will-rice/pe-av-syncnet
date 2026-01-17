@@ -81,8 +81,7 @@ class SyncNetLightningModule(LightningModule):
         with torch.autocast(self.device.type, enabled=False):
             loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.val_loss.update(loss)
-        predictions = (logits.sigmoid() > 0.5).float()
-        self.val_metrics.update(predictions, batch.labels.squeeze(-1))
+        self.val_metrics.update(logits, batch.labels.squeeze(-1))
         return loss
 
     def on_validation_epoch_end(self) -> None:
