@@ -74,10 +74,7 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model).train()
         self.encoder.gradient_checkpointing_enable()
-        self.head = nn.Sequential(
-            nn.LayerNorm(1024),
-            nn.Linear(1024, 1),
-        )
+        self.similarity_fn = nn.CosineSimilarity(dim=-1)
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
@@ -97,4 +94,6 @@ class SyncNet(PreTrainedModel):
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        return self.head(outputs.audio_video_embeds).squeeze(-1)
+        return self.similarity_fn(
+            outputs.audio_embeds.relu(), outputs.video_embeds.relu()
+        )
