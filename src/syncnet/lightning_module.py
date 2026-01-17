@@ -70,7 +70,7 @@ class SyncNetLightningModule(LightningModule):
     def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step."""
         logits = self.model(batch.audio, batch.video)
-        with torch.autocast("cuda", enabled=False):
+        with torch.autocast(self.device.type, enabled=False):
             loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.log("train_loss", self.train_loss(loss), prog_bar=True)
         return loss
@@ -78,7 +78,7 @@ class SyncNetLightningModule(LightningModule):
     def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single validation step."""
         logits = self.model(batch.audio, batch.video)
-        with torch.autocast("cuda", enabled=False):
+        with torch.autocast(self.device.type, enabled=False):
             loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.val_loss.update(loss)
         predictions = (logits.sigmoid() > 0.5).float()
