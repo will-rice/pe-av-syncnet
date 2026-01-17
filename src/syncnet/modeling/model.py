@@ -74,7 +74,6 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
         self.encoder.gradient_checkpointing_enable()
-        self.similarity_fn = nn.CosineSimilarity(dim=-1)
         self.logit_scale = nn.Parameter(torch.tensor(0.0))  # exp(0)=1
 
     def forward(
