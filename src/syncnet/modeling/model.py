@@ -91,4 +91,4 @@ class SyncNet(PreTrainedModel):
         """
         return self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
-        ).logits_audio_video
+        ).logits_audio_video.mean(dim=1)
