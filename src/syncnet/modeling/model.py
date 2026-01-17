@@ -97,4 +97,4 @@ class SyncNet(PreTrainedModel):
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        return self.head(outputs.audio_video_embeds).squeeze(-1)
+        return self.head(outputs.logits_audio_video).squeeze(-1)
