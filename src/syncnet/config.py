@@ -67,6 +67,9 @@ class Config(BaseModel):
     gradient_clip_val: float = Field(
         default=1.0, description="Gradient clipping value."
     )
+    gradient_checkpointing: bool = Field(
+        default=True, description="Enable gradient checkpointing."
+    )
 
     # Model
     base_model: str = Field(

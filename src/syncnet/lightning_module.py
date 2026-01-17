@@ -71,6 +71,11 @@ class SyncNetLightningModule(LightningModule):
         """Set the model to training mode."""
         self.model.train()
 
+    def on_fit_start(self) -> None:
+        """Enable gradient checkpointing if specified in config."""
+        if self.config.gradient_checkpointing:
+            self.model.encoder.gradient_checkpointing_enable()
+
     def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
         """Execute a single training step."""
         logits = self.model(batch.audio, batch.video)
