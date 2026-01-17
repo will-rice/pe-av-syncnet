@@ -45,12 +45,11 @@ class SyncNetConfig(PreTrainedConfig):
 class SyncNet(PreTrainedModel):
     """Audio-Visual Synchronization Model using pretrained encoder.
 
-    This model outputs sync logits based on the distance between L2-normalized
+    This model outputs sync logits based on the cosine similarity between
     audio and video embeddings. Positive logits indicate synchronized pairs.
 
     Attributes:
         encoder: Pretrained PeAudioVideoModel for feature extraction.
-        logit_scale: Learnable temperature parameter for scaling logits.
 
     Args:
         config: SyncNetConfig containing model configuration including
@@ -59,7 +58,7 @@ class SyncNet(PreTrainedModel):
     Example:
         >>> config = SyncNetConfig(base_model="facebook/pe-av-small")
         >>> model = SyncNet(config)
-        >>> audio = torch.randn(4, 1024)
+        >>> audio = torch.randn(4, 48000)
         >>> video = torch.randn(4, 5, 3, 224, 224)
         >>> logits = model(audio, video)
         >>> print(logits.shape)
@@ -75,7 +74,7 @@ class SyncNet(PreTrainedModel):
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
         self.encoder.gradient_checkpointing = True
-        self.logit_scale = nn.Parameter(torch.tensor(5.0))
+        self.similarity_fn = nn.CosineSimilarity(dim=-1)
 
     def forward(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
@@ -95,10 +94,9 @@ class SyncNet(PreTrainedModel):
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        audio_emb = nn.functional.normalize(outputs.audio_embeds, p=2.0, dim=1)
-        video_emb = nn.functional.normalize(outputs.video_embeds, p=2.0, dim=1)
-        distance = nn.functional.pairwise_distance(audio_emb, video_emb)
-        return self.logit_scale * (1.0 - distance)
+        return self.similarity_fn(
+            outputs.audio_embeds.relu(), outputs.video_embeds.relu()
+        )
 
     def get_sync_probability(
         self, input_values: torch.Tensor, pixel_values: torch.Tensor
