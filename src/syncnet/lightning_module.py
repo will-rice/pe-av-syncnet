@@ -79,7 +79,7 @@ class SyncNetLightningModule(LightningModule):
         logits = self.model(batch.audio, batch.video)
         loss = self.loss_fn(logits, batch.labels.squeeze(-1))
         self.val_loss.update(loss)
-        predictions = (logits > 0).float()
+        predictions = (logits.sigmoid() > 0.5).float()
         self.val_metrics.update(predictions, batch.labels.squeeze(-1))
         return loss
 
