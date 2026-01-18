@@ -46,7 +46,7 @@ class Config(BaseModel):
 
     # Data
     val_split: float = Field(
-        default=0.05, description="Proportion of data for validation."
+        default=0.2, description="Proportion of data for validation."
     )
     batch_size: int = Field(default=8, description="Batch size.")
 
