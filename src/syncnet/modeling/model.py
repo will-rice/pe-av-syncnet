@@ -92,8 +92,8 @@ class SyncNet(PreTrainedModel):
         outputs = self.encoder(
             input_values=input_values, pixel_values_videos=pixel_values
         )
-        audio_emb = nn.functional.normalize(outputs.audio_embeds, 2.0, -1)
-        video_emb = nn.functional.normalize(outputs.video_embeds, 2.0, -1)
+        audio_emb = nn.functional.normalize(outputs.audio_embeds, p=2.0, dim=-1)
+        video_emb = nn.functional.normalize(outputs.video_embeds, p=2.0, dim=-1)
         sim = (audio_emb * video_emb).sum(dim=-1)
         logits = sim * self.logit_scale.exp()
         return logits
