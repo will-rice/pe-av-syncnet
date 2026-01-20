@@ -80,5 +80,5 @@ class Config(BaseModel):
     negative_fraction: float = Field(
         default=0.5, description="Fraction of negative samples."
     )
-    frame_height: int = Field(default=225, description="Height of input video frames.")
+    frame_height: int = Field(default=224, description="Height of input video frames.")
     frame_width: int = Field(default=224, description="Width of input video frames.")
