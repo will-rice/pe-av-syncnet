@@ -73,6 +73,19 @@ class SyncNet(PreTrainedModel):
         """
         super().__init__(config=config)
         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
+        for param in self.encoder.parameters():
+            param.requires_grad = False
+
+        self.face_head = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+        )
+        self.audio_head = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+        )
         self.logit_scale = nn.Parameter(torch.tensor(0.0))  # exp(0)=1
 
     def forward(
@@ -89,11 +102,14 @@ class SyncNet(PreTrainedModel):
         Returns:
             Sync logits. Shape: (batch_size,).
         """
-        outputs = self.encoder(
-            input_values=input_values, pixel_values_videos=pixel_values
-        )
-        audio_emb = nn.functional.normalize(outputs.audio_embeds, p=2.0, dim=-1)
-        video_emb = nn.functional.normalize(outputs.video_embeds, p=2.0, dim=-1)
+        with torch.no_grad():
+            outputs = self.encoder(
+                input_values=input_values, pixel_values_videos=pixel_values
+            )
+        audio_emb = self.audio_head(outputs.audio_embeds)
+        video_emb = self.face_head(outputs.video_embeds)
+        audio_emb = nn.functional.normalize(audio_emb, p=2.0, dim=-1)
+        video_emb = nn.functional.normalize(video_emb, p=2.0, dim=-1)
         sim = (audio_emb * video_emb).sum(dim=-1)
         logits = sim * self.logit_scale.exp()
         return logits
