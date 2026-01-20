@@ -48,7 +48,7 @@ class Config(BaseModel):
     val_split: float = Field(
         default=0.2, description="Proportion of data for validation."
     )
-    batch_size: int = Field(default=8, description="Batch size.")
+    batch_size: int = Field(default=64, description="Batch size.")
 
     # Training
     max_epochs: int = Field(default=200, description="Maximum number of epochs.")

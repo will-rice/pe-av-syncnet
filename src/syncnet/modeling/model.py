@@ -77,11 +77,15 @@ class SyncNet(PreTrainedModel):
             param.requires_grad = False
 
         self.face_head = nn.Sequential(
+            nn.Linear(1024, 512),
+            nn.ReLU(),
             nn.Linear(512, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
         )
         self.audio_head = nn.Sequential(
+            nn.Linear(1024, 512),
+            nn.ReLU(),
             nn.Linear(512, 256),
             nn.ReLU(),
             nn.Linear(256, 128),
