@@ -70,6 +70,7 @@ class SyncNetLightningModule(LightningModule):
     def configure_model(self) -> None:
         """Set the model to training mode."""
         self.model.train()
+        self.model.encoder.eval()
 
     def on_fit_start(self) -> None:
         """Enable gradient checkpointing if specified in config."""
