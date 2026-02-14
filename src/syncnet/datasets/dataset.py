@@ -72,13 +72,13 @@ class SyncNetDataset(Dataset):
         total_frames = video_decoder.metadata.num_frames
         fps = video_decoder.metadata.average_fps
 
-        # Pick random start frame for video
-        end_frame = total_frames - self.config.num_frames
-        video_start = random.randint(0, end_frame)
+        # Pick random start frame for video (ensure non-negative range)
+        end_frame = max(0, total_frames - self.config.num_frames)
+        video_start = random.randint(0, end_frame) if end_frame > 0 else 0
 
         # Determine if this is a negative sample (mismatched audio/video)
         is_negative = random.random() > self.config.negative_fraction
-        if is_negative:
+        if is_negative and end_frame > 0:
             # Pick a different audio start position
             audio_frame_start = random.randint(0, end_frame)
             while abs(audio_frame_start - video_start) <= 1:
@@ -88,13 +88,30 @@ class SyncNetDataset(Dataset):
 
         # Load only the required video frames
         frame_batch = video_decoder.get_frames_in_range(
-            video_start, video_start + self.config.num_frames
+            video_start, min(video_start + self.config.num_frames, total_frames)
         )
         # (T, C, H, W) format from torchcodec
         video = frame_batch.data
 
+        # Resize video frames
+        video = self.resize(video)
+
+        # Pad or truncate video to num_frames
+        if video.shape[0] < self.config.num_frames:
+            # Pad with zeros
+            padding = torch.zeros(
+                self.config.num_frames - video.shape[0],
+                video.shape[1],
+                video.shape[2],
+                video.shape[3],
+                dtype=video.dtype,
+            )
+            video = torch.cat([video, padding], dim=0)
+        elif video.shape[0] > self.config.num_frames:
+            video = video[: self.config.num_frames]
+
         # Calculate audio time range and load only required samples
-        audio_start_time = audio_frame_start / fps
+        audio_start_time = audio_frame_start / float(fps)
         audio_end_time = (audio_frame_start + self.config.num_frames) / fps
 
         audio_decoder = AudioDecoder(video_path)
@@ -107,9 +124,6 @@ class SyncNetDataset(Dataset):
         # Convert to mono
         audio = audio.mean(dim=0, keepdim=True)
 
-        # Resize video frames
-        video = self.resize(video)
-
         # Resample audio to target sample rate
         if source_sample_rate != self.target_sample_rate:
             resample = torchaudio.transforms.Resample(
@@ -117,12 +131,23 @@ class SyncNetDataset(Dataset):
             )
             audio = resample(audio)
 
+        # Calculate expected audio length and pad/truncate
+        expected_audio_len = int(self.config.num_frames / fps * self.target_sample_rate)
+        if audio.shape[1] < expected_audio_len:
+            # Pad with zeros
+            padding = torch.zeros(
+                1, expected_audio_len - audio.shape[1], dtype=audio.dtype
+            )
+            audio = torch.cat([audio, padding], dim=1)
+        elif audio.shape[1] > expected_audio_len:
+            audio = audio[:, :expected_audio_len]
+
         # Process through HuggingFace processor
         input_values = self.processor(
             videos=video,
             audio=audio.squeeze(0),
             return_tensors="pt",
-            padding=False,
+            padding="do_not_pad",
             sampling_rate=self.target_sample_rate,
         )
 
