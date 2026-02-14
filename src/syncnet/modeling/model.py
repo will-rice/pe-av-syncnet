@@ -39,7 +39,7 @@ class SyncNetConfig(PreTrainedConfig):
         Args:
             **kwargs: Configuration parameters to store.
         """
-        super().__init__(**kwargs)  # type: ignore
+        super().__init__(**kwargs)  # ty: ignore[invalid-argument-type]
 
 
 class SyncNet(PreTrainedModel):

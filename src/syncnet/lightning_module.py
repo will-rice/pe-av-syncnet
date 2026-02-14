@@ -116,7 +116,7 @@ class SyncNetLightningModule(LightningModule):
             if self.push_to_hub:
                 try:
                     # Push main model
-                    self.model.push_to_hub(  # type: ignore[call-arg]
+                    self.model.push_to_hub(  # ty: ignore[unknown-argument]
                         repo_id=log_path.name,
                         commit_message="Add model checkpoint",
                         token=True,

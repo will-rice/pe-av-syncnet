@@ -93,7 +93,7 @@ def main() -> None:
     log_path = args.log_root / f"{model_name}-{git_hash}"
     log_path.mkdir(exist_ok=True, parents=True)
 
-    dataset = SyncNetDataset(args.data_root)
+    dataset = SyncNetDataset(args.data_root, config)
     datamodule = SyncNetDataModule(dataset, config=config, num_workers=args.num_workers)
     lightning_module = SyncNetLightningModule(
         config=config,
@@ -148,8 +148,6 @@ def main() -> None:
         gradient_clip_val=config.gradient_clip_val,
         callbacks=callbacks_list,
         enable_checkpointing=True,
-        val_check_interval=5000,
-        limit_val_batches=100,
         fast_dev_run=args.fast_dev_run,
         strategy="deepspeed_stage_2" if args.num_devices > 1 else "auto",
     )

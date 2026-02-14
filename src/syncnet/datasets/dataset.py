@@ -1,15 +1,23 @@
 """Dataset class for loading audio-visual data for SyncNet training.
 
 This module provides a PyTorch Dataset implementation for loading video files
-containing both audio and visual streams. It recursively searches for MP4 files
-in a given directory and loads them for training.
+containing both audio and visual streams. It efficiently loads only the required
+frames and audio samples for each training sample.
 """
 
 import os
+import random
 from pathlib import Path
 
+import torch
+import torchaudio
+import torchvision
 from torch.utils.data import Dataset
 from torchcodec.decoders import AudioDecoder, VideoDecoder
+from transformers.models.pe_audio_video import PeAudioVideoProcessor
+
+from syncnet.config import Config
+from syncnet.datasets import Batch
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -18,87 +26,108 @@ class SyncNetDataset(Dataset):
     """PyTorch Dataset for loading audio-visual synchronization training data.
 
     This dataset loads video files (MP4 format) from a directory tree and
-    extracts both video frames and audio waveforms. It's designed for training
-    audio-visual synchronization models.
-
-    The dataset recursively searches for all .mp4 files in the provided root
-    directory and its subdirectories. Each sample contains the video frames,
-    audio waveform, and metadata from the video file.
+    efficiently extracts only the required video frames and audio samples.
+    It handles all preprocessing including resizing, resampling, and
+    negative sample generation.
 
     Attributes:
         data_root: Path to the root directory containing video files.
         sample_paths: List of paths to all MP4 files found in the directory tree.
+        config: Configuration object with training parameters.
+        processor: HuggingFace processor for audio-visual preprocessing.
 
     Args:
-        root: Root directory path containing the video files. The dataset will
-            recursively search this directory for all .mp4 files.
-
-    Example:
-        >>> dataset = SyncNetDataset(Path("/path/to/videos"))
-        >>> print(len(dataset))
-        1000
-        >>> video, audio, metadata = dataset[0]
-        >>> print(video.shape, audio.shape)
-        torch.Size([100, 224, 224, 3]) torch.Size([2, 48000])
-
-    Note:
-        This class sets TOKENIZERS_PARALLELISM=false to avoid warnings when
-        using HuggingFace tokenizers in multiprocessing data loaders.
+        root: Root directory path containing the video files.
+        config: Configuration object with model and training settings.
     """
 
-    def __init__(self, root: Path) -> None:
-        """Initialize the dataset with the root directory path.
-
-        Args:
-            root: Path to the root directory containing video files.
-        """
+    def __init__(self, root: Path, config: Config) -> None:
         super().__init__()
         self.data_root = root
         self.sample_paths = list(root.rglob("*.mp4"))
+        self.config = config
+        self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
+        self.target_sample_rate = self.processor.feature_extractor.sampling_rate  # ty: ignore[unresolved-attribute]
+        self.resize = torchvision.transforms.Resize(
+            (config.frame_height, config.frame_width)
+        )
 
     def __len__(self) -> int:
-        """Return the number of samples in the dataset.
-
-        Returns:
-            The total number of video files found in the dataset.
-        """
+        """Return the total number of video samples available."""
         return len(self.sample_paths)
 
-    def __getitem__(self, idx: int) -> tuple:
-        """Load and return the video, audio, and metadata for a sample.
+    def __getitem__(self, idx: int) -> Batch:
+        """Load and return processed video, audio, and label for a sample.
 
-        Args:
-            idx: Index of the sample to load (0 to len(dataset)-1).
+        Efficiently loads only the required frames and audio samples,
+        applies preprocessing, and generates positive/negative labels.
 
         Returns:
-            A tuple containing:
-                - video: Tensor of shape (T, H, W, C) with video frames.
-                - audio: Tensor of shape (C, N) with audio samples.
-                - metadata: Dictionary with video metadata (fps, duration, etc).
-
-        Raises:
-            IndexError: If idx is out of bounds.
-            RuntimeError: If the video file cannot be read or is corrupted.
+            Batch containing processed video, audio, and label tensors.
         """
         video_path = str(self.sample_paths[idx])
 
-        # Load video frames
+        # Get video metadata first to determine valid frame range
         video_decoder = VideoDecoder(video_path)
+        total_frames = video_decoder.metadata.num_frames
+        fps = video_decoder.metadata.average_fps
+
+        # Pick random start frame for video
+        end_frame = total_frames - self.config.num_frames
+        video_start = random.randint(0, end_frame)
+
+        # Determine if this is a negative sample (mismatched audio/video)
+        is_negative = random.random() > self.config.negative_fraction
+        if is_negative:
+            # Pick a different audio start position
+            audio_frame_start = random.randint(0, end_frame)
+            while abs(audio_frame_start - video_start) <= 1:
+                audio_frame_start = random.randint(0, end_frame)
+        else:
+            audio_frame_start = video_start
+
+        # Load only the required video frames
         frame_batch = video_decoder.get_frames_in_range(
-            0, video_decoder.metadata.num_frames
+            video_start, video_start + self.config.num_frames
         )
-        # Convert from (T, C, H, W) to (T, H, W, C) to match torchvision format
-        video = frame_batch.data.permute(0, 2, 3, 1)
+        # (T, C, H, W) format from torchcodec
+        video = frame_batch.data
 
-        # Load audio from the same video file
+        # Calculate audio time range and load only required samples
+        audio_start_time = audio_frame_start / fps
+        audio_end_time = (audio_frame_start + self.config.num_frames) / fps
+
         audio_decoder = AudioDecoder(video_path)
-        audio_samples = audio_decoder.get_all_samples()
-        audio = audio_samples.data  # Shape: (C, N), already normalized to [-1, 1]
+        audio_samples = audio_decoder.get_samples_played_in_range(
+            audio_start_time, audio_end_time
+        )
+        source_sample_rate = audio_samples.sample_rate
+        audio = audio_samples.data  # Shape: (C, N)
 
-        # Build metadata dict to match torchvision format
-        metadata = {
-            "video_fps": video_decoder.metadata.average_fps,
-            "audio_fps": audio_samples.sample_rate,
-        }
+        # Convert to mono
+        audio = audio.mean(dim=0, keepdim=True)
 
-        return video, audio, metadata
+        # Resize video frames
+        video = self.resize(video)
+
+        # Resample audio to target sample rate
+        if source_sample_rate != self.target_sample_rate:
+            resample = torchaudio.transforms.Resample(
+                source_sample_rate, self.target_sample_rate
+            )
+            audio = resample(audio)
+
+        # Process through HuggingFace processor
+        input_values = self.processor(
+            videos=video,
+            audio=audio.squeeze(0),
+            return_tensors="pt",
+            padding=False,
+            sampling_rate=self.target_sample_rate,
+        )
+
+        return Batch(
+            video=input_values["pixel_values_videos"][0],
+            audio=input_values["input_values"][0],
+            labels=torch.tensor(0.0 if is_negative else 1.0),
+        )

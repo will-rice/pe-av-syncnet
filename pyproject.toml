@@ -10,7 +10,6 @@ dependencies = [
   "git-python>=1.0.3",
   "lightning>=2.5.5",
   "mediapipe>=0.10.9",
-  "mypy>=1.15.0",
   "opencv-python>=4.9.0",
   "pre-commit>=4.1.0",
   "pydantic>=2.12.2",
@@ -24,6 +23,7 @@ dependencies = [
   "torchcodec>=0.9.1",
   "torchvision>=0.24.1",
   "transformers>=4.57.3",
+  "ty>=0.0.17",
   "wandb>=0.22.2",
 ]
 
@@ -50,11 +50,6 @@ convention = "google"
 
 [tool.pytest.ini_options]
 filterwarnings = ["ignore::DeprecationWarning"]
-
-[tool.mypy]
-ignore_missing_imports = true
-follow_imports_for_stubs = true
-exclude = [".venv"]
 
 [project.scripts]
 train = "syncnet.scripts.train:main"

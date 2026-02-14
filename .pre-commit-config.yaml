@@ -26,10 +26,10 @@ repos:
         entry: uv run ruff check --fix
         files: ^(src|tests)/.*\.py$
         pass_filenames: true
-      - id: mypy
-        name: mypy
+      - id: ty
+        name: ty
         language: system
-        entry: uv run mypy
+        entry: uv run ty check
         files: ^(src|tests)/.*\.py$
         pass_filenames: true
       - id: pytest
