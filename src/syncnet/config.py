@@ -76,7 +76,9 @@ class Config(BaseModel):
         default="facebook/pe-av-small", description="Base model name or path."
     )
 
-    num_frames: int = Field(default=16, description="Number of video frames to process.")
+    num_frames: int = Field(
+        default=16, description="Number of video frames to process."
+    )
     negative_fraction: float = Field(
         default=0.5, description="Fraction of negative samples."
     )
