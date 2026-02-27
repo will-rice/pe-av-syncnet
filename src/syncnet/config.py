@@ -62,7 +62,7 @@ class Config(BaseModel):
     )
     weight_decay: float = Field(default=1e-2, description="Weight decay for optimizer.")
     accumulate_grad_batches: int = Field(
-        default=1, description="Number of gradient accumulation."
+        default=8, description="Number of gradient accumulation."
     )
     gradient_clip_val: float = Field(
         default=1.0, description="Gradient clipping value."
