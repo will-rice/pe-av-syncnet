@@ -106,11 +106,9 @@ class SyncNet(PreTrainedModel):
         Returns:
             Sync logits. Shape: (batch_size,).
         """
-        height = pixel_values.shape[3]
-        lower_half = pixel_values[..., height // 2 :, :]
         with torch.no_grad():
             outputs = self.encoder(
-                input_values=input_values, pixel_values_videos=lower_half
+                input_values=input_values, pixel_values_videos=pixel_values
             )
         audio_emb = self.audio_head(outputs.audio_embeds)
         video_emb = self.face_head(outputs.video_embeds)

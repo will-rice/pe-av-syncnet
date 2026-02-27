@@ -144,7 +144,7 @@ class SyncNetDataset(Dataset):
 
         # Process through HuggingFace processor
         input_values = self.processor(
-            videos=video,
+            videos=video[..., video.shape[2] // 2 :, :],
             audio=audio.squeeze(0),
             return_tensors="pt",
             padding="do_not_pad",
