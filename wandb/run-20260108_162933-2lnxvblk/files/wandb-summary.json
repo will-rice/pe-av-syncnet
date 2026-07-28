@@ -1,0 +1,1 @@
+{"_wandb":{"runtime":10895},"epoch":0,"_runtime":10895,"_step":431,"lr-AdamW":0.0001,"val_accuracy":0.49248120188713074,"_timestamp":1.7679006551408446e+09,"val_loss":0.6937623023986816,"train_loss":0.6879287958145142,"trainer/global_step":10549}

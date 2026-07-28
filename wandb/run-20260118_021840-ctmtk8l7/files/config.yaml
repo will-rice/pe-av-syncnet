@@ -1,0 +1,113 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        code_path: code/.venv/bin/train
+        e:
+            tdq47iflg65zaqvkltjrpvv9zcoxcrmo:
+                args:
+                    - /data-fast/synced-preprocessed/
+                codePath: .venv/bin/train
+                codePathLocal: .venv/bin/train
+                cpu_count: 32
+                cpu_count_logical: 64
+                cudaVersion: "12.4"
+                disk:
+                    /:
+                        total: "1965728006144"
+                        used: "1458948382720"
+                email: wrice20@gmail.com
+                executable: /home/will/projects/pe-av-syncnet/.venv/bin/python3
+                git:
+                    commit: 8ee9dc0545daa71b8a8f9af5a24f0e83d83844c0
+                    remote: git@github.com:will-rice/pe-av-syncnet.git
+                gpu: NVIDIA GeForce RTX 3090
+                gpu_count: 2
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 10496
+                      memoryTotal: "25769803776"
+                      name: NVIDIA GeForce RTX 3090
+                      uuid: GPU-45488e0a-f483-a7f9-2945-25e945046397
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-96ee7a73-a28a-48d9-d947-4b44377a6f9f
+                host: green
+                memory:
+                    total: "270053867520"
+                os: Linux-5.15.0-163-generic-x86_64-with-glibc2.35
+                program: /home/will/projects/pe-av-syncnet/.venv/bin/train
+                python: CPython 3.12.6
+                root: .
+                startedAt: "2026-01-18T02:18:40.991072Z"
+                writerId: tdq47iflg65zaqvkltjrpvv9zcoxcrmo
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.12.6
+        t:
+            "1":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 63
+                - 106
+            "2":
+                - 1
+                - 11
+                - 41
+                - 49
+                - 63
+                - 106
+            "3":
+                - 7
+                - 13
+                - 66
+            "4": 3.12.6
+            "5": 0.23.1
+            "6": 5.0.0.dev0
+            "8":
+                - 2
+            "12": 0.23.1
+            "13": linux-x86_64
+accumulate_grad_batches:
+    value: 1
+base_model:
+    value: facebook/pe-av-small
+batch_size:
+    value: 8
+early_stopping_patience:
+    value: -1
+frame_height:
+    value: 224
+frame_width:
+    value: 224
+gradient_clip_val:
+    value: 1
+learning_rate:
+    value: 2e-05
+lr_scheduler:
+    value: constant
+max_epochs:
+    value: 200
+min_learning_rate:
+    value: 1e-06
+negative_fraction:
+    value: 0.5
+num_frames:
+    value: 5
+seed:
+    value: 42
+val_split:
+    value: 0.05
+weight_decay:
+    value: 0.01

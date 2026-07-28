@@ -1,0 +1,304 @@
+diff --git a/src/syncnet/lightning_module.py b/src/syncnet/lightning_module.py
+index 168d8c1..6b5e4fb 100644
+--- a/src/syncnet/lightning_module.py
++++ b/src/syncnet/lightning_module.py
+@@ -8,6 +8,7 @@ Lightning framework.
+ from pathlib import Path
+ 
+ import torch
++import torch.nn.functional as F
+ from lightning.pytorch import LightningModule
+ from lightning.pytorch.utilities.memory import garbage_collection_cuda
+ from torch import nn
+@@ -19,6 +20,49 @@ from syncnet.datasets import Batch
+ from syncnet.modeling.model import SyncNet, SyncNetConfig
+ 
+ 
++class ContrastiveLoss(nn.Module):
++    """Contrastive loss for metric learning.
++
++    This loss function pulls together embeddings of positive pairs (synchronized
++    audio-video) and pushes apart embeddings of negative pairs (out-of-sync).
++
++    For positive pairs: L = D²
++    For negative pairs: L = max(margin - D, 0)²
++
++    where D is the Euclidean distance between embeddings.
++
++    Args:
++        margin: Minimum distance for negative pairs. Pairs further than this
++            margin incur no loss. Default: 1.0.
++    """
++
++    def __init__(self, margin: float = 1.0) -> None:
++        super().__init__()
++        self.margin = margin
++
++    def forward(
++        self,
++        audio_embeds: torch.Tensor,
++        video_embeds: torch.Tensor,
++        labels: torch.Tensor,
++    ) -> torch.Tensor:
++        """Compute contrastive loss.
++
++        Args:
++            audio_embeds: Audio embeddings. Shape: (batch_size, embed_dim).
++            video_embeds: Video embeddings. Shape: (batch_size, embed_dim).
++            labels: Binary labels where 1 = synced (positive), 0 = out-of-sync.
++                Shape: (batch_size,).
++
++        Returns:
++            Scalar loss tensor.
++        """
++        distance = F.pairwise_distance(audio_embeds, video_embeds)
++        positive_loss = labels * distance.pow(2)
++        negative_loss = (1 - labels) * torch.clamp(self.margin - distance, min=0).pow(2)
++        return (positive_loss + negative_loss).mean()
++
++
+ class SyncNetLightningModule(LightningModule):
+     """PyTorch Lightning Module for training SyncNet models.
+ 
+@@ -26,17 +70,17 @@ class SyncNetLightningModule(LightningModule):
+     initialization, training/validation steps, metric tracking, optimizer
+     configuration, and optional model uploading to HuggingFace Hub.
+ 
+-    The module uses Binary Cross-Entropy loss to train the model to distinguish
+-    between synchronized and out-of-sync audio-visual pairs. It tracks training
+-    loss, validation loss, and validation accuracy, and automatically saves the
+-    best model based on validation loss.
++    The module uses contrastive loss to train the model to produce embeddings
++    that are close for synchronized audio-visual pairs and far apart for
++    out-of-sync pairs. It tracks training loss, validation loss, and validation
++    accuracy, and automatically saves the best model based on validation loss.
+ 
+     Attributes:
+         config: Configuration object with training hyperparameters.
+         model: SyncNet model for audio-visual synchronization.
+         push_to_hub: Whether to push model checkpoints to HuggingFace Hub.
+         sync_dist: Whether to synchronize metrics across distributed processes.
+-        loss_fn: Binary cross-entropy loss function.
++        loss_fn: Contrastive loss function.
+         train_loss: Metric for tracking mean training loss.
+         val_loss: Metric for tracking mean validation loss.
+         val_metrics: Collection of validation metrics including accuracy.
+@@ -73,19 +117,35 @@ class SyncNetLightningModule(LightningModule):
+         self.model = SyncNet(SyncNetConfig(**config.model_dump()))
+         self.push_to_hub = push_to_hub
+         self.sync_dist = sync_dist
+-        self.loss_fn = nn.BCELoss()
++        self.loss_fn = ContrastiveLoss(margin=1.0)
+         self.train_loss = MeanMetric()
+         self.val_loss = MeanMetric()
+         self.val_metrics = MetricCollection({"val_accuracy": Accuracy(task="binary")})
+         self.processor = PeAudioVideoProcessor.from_pretrained(config.base_model)
+         self.lowest_val_loss = float("inf")
+ 
+-    def training_step(self, batch: Batch, batch_idx: int) -> None:
++    def _compute_predictions(
++        self, audio_embeds: torch.Tensor, video_embeds: torch.Tensor
++    ) -> torch.Tensor:
++        """Convert embedding distances to binary predictions for accuracy.
++
++        Uses distance threshold of margin/2 to classify as synced or not.
++
++        Args:
++            audio_embeds: Audio embeddings. Shape: (batch_size, embed_dim).
++            video_embeds: Video embeddings. Shape: (batch_size, embed_dim).
++
++        Returns:
++            Binary predictions where 1 = synced, 0 = out-of-sync.
++        """
++        distance = F.pairwise_distance(audio_embeds, video_embeds)
++        return (distance < self.loss_fn.margin / 2).float()
++
++    def training_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
+         """Execute a single training step.
+ 
+-        Performs forward pass through the model, computes loss, and logs metrics.
+-        The loss is computed using Binary Cross-Entropy between predicted
+-        similarity scores and ground truth labels.
++        Performs forward pass through the model, computes contrastive loss,
++        and logs metrics.
+ 
+         Args:
+             batch: Batch object containing audio, video, and labels.
+@@ -94,13 +154,15 @@ class SyncNetLightningModule(LightningModule):
+         Returns:
+             Loss tensor for backpropagation.
+         """
+-        similarity = self.model(batch.audio, batch.video)
++        output = self.model(batch.audio, batch.video)
+         with torch.autocast(device_type=self.device.type, enabled=False):
+-            loss = self.loss_fn(similarity.squeeze(-1), batch.labels.squeeze(-1))
++            loss = self.loss_fn(
++                output.audio_embeds, output.video_embeds, batch.labels.squeeze(-1)
++            )
+         self.log("train_loss", self.train_loss(loss), prog_bar=True)
+         return loss
+ 
+-    def validation_step(self, batch: Batch, batch_idx: int) -> None:
++    def validation_step(self, batch: Batch, batch_idx: int) -> torch.Tensor:
+         """Execute a single validation step.
+ 
+         Performs forward pass and computes validation metrics without gradient
+@@ -113,11 +175,14 @@ class SyncNetLightningModule(LightningModule):
+         Returns:
+             Loss tensor for the validation batch.
+         """
+-        similarity = self.model(batch.audio, batch.video)
++        output = self.model(batch.audio, batch.video)
+         with torch.autocast(device_type=self.device.type, enabled=False):
+-            loss = self.loss_fn(similarity.squeeze(-1), batch.labels.squeeze(-1))
++            loss = self.loss_fn(
++                output.audio_embeds, output.video_embeds, batch.labels.squeeze(-1)
++            )
+         self.val_loss.update(loss)
+-        self.val_metrics.update(similarity.squeeze(-1), batch.labels.squeeze(-1))
++        predictions = self._compute_predictions(output.audio_embeds, output.video_embeds)
++        self.val_metrics.update(predictions, batch.labels.squeeze(-1))
+         return loss
+ 
+     def on_validation_epoch_end(self) -> None:
+diff --git a/src/syncnet/modeling/model.py b/src/syncnet/modeling/model.py
+index 30ffc05..14158d0 100644
+--- a/src/syncnet/modeling/model.py
++++ b/src/syncnet/modeling/model.py
+@@ -2,16 +2,25 @@
+ 
+ This module implements the SyncNet model that learns to determine whether
+ audio and video streams are temporally synchronized. The model uses a
+-pretrained audio-visual encoder and computes cosine similarity between
+-audio and video embeddings.
++pretrained audio-visual encoder and learns embeddings that are close for
++synchronized pairs and far apart for out-of-sync pairs.
+ """
+ 
++from typing import NamedTuple
++
+ import torch
+ import torch.nn as nn
+ from transformers import PreTrainedConfig, PreTrainedModel
+ from transformers.models.pe_audio_video import PeAudioVideoModel
+ 
+ 
++class SyncNetOutput(NamedTuple):
++    """Output container for SyncNet model."""
++
++    audio_embeds: torch.Tensor
++    video_embeds: torch.Tensor
++
++
+ class SyncNetConfig(PreTrainedConfig):
+     """Configuration class for SyncNet model.
+ 
+@@ -45,21 +54,18 @@ class SyncNetConfig(PreTrainedConfig):
+ class SyncNet(PreTrainedModel):
+     """Audio-Visual Synchronization Model using pretrained encoder.
+ 
+-    This model determines whether audio and video streams are synchronized
+-    by computing the similarity between learned embeddings. It uses a
++    This model learns embeddings for audio and video that are close together
++    for synchronized pairs and far apart for out-of-sync pairs. It uses a
+     pretrained audio-visual encoder (PeAudioVideo) to extract separate
+-    embeddings for audio and video, then computes their cosine similarity.
++    embeddings for audio and video.
+ 
+     The model applies:
+     1. Feature extraction using pretrained encoder
+     2. Flattening of temporal/spatial dimensions
+     3. L2 normalization of embeddings
+-    4. Cosine similarity computation
+-    5. Scaling from [-1, 1] to [0, 1] for BCE loss compatibility
+ 
+     Attributes:
+         encoder: Pretrained PeAudioVideoModel for feature extraction.
+-        similarity_fn: Cosine similarity function for comparing embeddings.
+ 
+     Args:
+         config: SyncNetConfig containing model configuration including
+@@ -70,9 +76,8 @@ class SyncNet(PreTrainedModel):
+         >>> model = SyncNet(config)
+         >>> audio = torch.randn(4, 1024)
+         >>> video = torch.randn(4, 5, 3, 224, 224)
+-        >>> similarity = model(audio, video)
+-        >>> print(similarity.shape)
+-        torch.Size([4])
++        >>> output = model(audio, video)
++        >>> print(output.audio_embeds.shape, output.video_embeds.shape)
+     """
+ 
+     def __init__(self, config: SyncNetConfig) -> None:
+@@ -84,16 +89,15 @@ class SyncNet(PreTrainedModel):
+         super().__init__(config=config)
+         self.encoder = PeAudioVideoModel.from_pretrained(config.base_model)
+         self.encoder.gradient_checkpointing = True
+-        self.similarity_fn = nn.CosineSimilarity(dim=-1)
+ 
+     def forward(
+         self, input_values: torch.Tensor, pixel_values: torch.Tensor
+-    ) -> torch.Tensor:
+-        """Compute synchronization similarity between audio and video.
++    ) -> SyncNetOutput:
++        """Extract L2-normalized embeddings for audio and video.
+ 
+-        Processes audio and video inputs through the encoder, normalizes
+-        the resulting embeddings, and computes cosine similarity to determine
+-        if they are synchronized.
++        Processes audio and video inputs through the encoder and normalizes
++        the resulting embeddings. Use contrastive loss on these embeddings
++        to train for synchronization detection.
+ 
+         Args:
+             input_values: Preprocessed audio tensor from the processor.
+@@ -102,25 +106,34 @@ class SyncNet(PreTrainedModel):
+                 Shape: (batch_size, num_frames, channels, height, width).
+ 
+         Returns:
+-            Similarity scores between 0 and 1, where higher values indicate
+-            better synchronization. Shape: (batch_size,).
+-
+-        Note:
+-            The embeddings are flattened and L2-normalized before similarity
+-            computation. Output is scaled from [-1, 1] to [0, 1] for BCE loss.
++            SyncNetOutput containing L2-normalized audio and video embeddings.
+         """
+         outputs = self.encoder(
+             input_values=input_values, pixel_values_videos=pixel_values
+         )
+-        audio_emb = outputs.audio_embeds
+-        face_emb = outputs.video_embeds
++        audio_emb = nn.functional.normalize(outputs.audio_embeds, p=2.0, dim=1)
++        video_emb = nn.functional.normalize(outputs.video_embeds, p=2.0, dim=1)
+ 
+-        audio_emb = audio_emb.view(audio_emb.size(0), -1)
+-        face_emb = face_emb.view(face_emb.size(0), -1)
++        return SyncNetOutput(audio_embeds=audio_emb, video_embeds=video_emb)
+ 
+-        audio_emb = nn.functional.normalize(audio_emb, p=2.0, dim=1)
+-        face_emb = nn.functional.normalize(face_emb, p=2.0, dim=1)
++    def get_sync_probability(
++        self,
++        input_values: torch.Tensor,
++        pixel_values: torch.Tensor,
++        margin: float = 1.0,
++        temperature: float = 5.0,
++    ) -> torch.Tensor:
++        """Compute probability that audio and video are synchronized.
+ 
+-        similarity = self.similarity_fn(audio_emb, face_emb).squeeze(-1)
+-        # Scale from [-1, 1] to [0, 1] for BCE loss
+-        return (similarity + 1) / 2
++        Args:
++            input_values: Preprocessed audio tensor from the processor.
++            pixel_values: Preprocessed video frames from the processor.
++            margin: Decision boundary distance (should match training). Default: 1.0.
++            temperature: Controls sharpness of probability transition. Default: 5.0.
++
++        Returns:
++            Probability scores in [0, 1]. Shape: (batch_size,).
++        """
++        output = self(input_values, pixel_values)
++        distance = nn.functional.pairwise_distance(output.audio_embeds, output.video_embeds)
++        return torch.sigmoid((margin - distance) * temperature)

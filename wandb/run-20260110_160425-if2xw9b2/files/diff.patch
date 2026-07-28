@@ -1,0 +1,9 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index a94d3e8..84dd347 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -59,3 +59,4 @@ exclude = [".venv"]
+ [project.scripts]
+ train = "syncnet.scripts.train:main"
+ compile = "syncnet.scripts.compile:main"
++filter = "syncnet.scripts.filter_bad_videos:main"
